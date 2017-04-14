@@ -130,9 +130,10 @@ export function postComment(feedItemId, author, contents, cb) {
 }
 
 /**
+/**
  * Updates a feed item's likeCounter by adding the user to the likeCounter.
  * Provides an updated likeCounter in the response.
- */
+ *
 export function likeFeedItem(feedItemId, userId, cb) {
   var feedItem = readDocument('feedItems', feedItemId);
   // Normally, we would check if the user already liked this comment.
@@ -147,7 +148,7 @@ export function likeFeedItem(feedItemId, userId, cb) {
 /**
  * Updates a feed item's likeCounter by removing the user from the likeCounter.
  * Provides an updated likeCounter in the response.
- */
+ *
 export function unlikeFeedItem(feedItemId, userId, cb) {
   var feedItem = readDocument('feedItems', feedItemId);
   // Find the array index that contains the user's ID.
@@ -166,7 +167,7 @@ export function unlikeFeedItem(feedItemId, userId, cb) {
 
 /**
  * Adds a 'like' to a comment.
- */
+ *
 export function likeComment(feedItemId, commentIdx, userId, cb) {
   var feedItem = readDocument('feedItems', feedItemId);
   var comment = feedItem.comments[commentIdx];
@@ -178,7 +179,7 @@ export function likeComment(feedItemId, commentIdx, userId, cb) {
 
 /**
  * Removes a 'like' from a comment.
- */
+ *
 export function unlikeComment(feedItemId, commentIdx, userId, cb) {
   var feedItem = readDocument('feedItems', feedItemId);
   var comment = feedItem.comments[commentIdx];
@@ -193,7 +194,7 @@ export function unlikeComment(feedItemId, commentIdx, userId, cb) {
 
 /**
  * Updates the text in a feed item (assumes a status update)
- */
+ *
 export function updateFeedItemText(feedItemId, newContent, cb) {
   var feedItem = readDocument('feedItems', feedItemId);
   // Update text content of update.
@@ -204,7 +205,7 @@ export function updateFeedItemText(feedItemId, newContent, cb) {
 
 /**
  * Deletes a feed item.
- */
+ *
 export function deleteFeedItem(feedItemId, cb) {
   // Assumption: The current user authored this feed item.
   deleteDocument('feedItems', feedItemId);
@@ -230,7 +231,7 @@ export function deleteFeedItem(feedItemId, cb) {
 
 /**
  * Searches for feed items with the given text.
- */
+ *
 export function searchForFeedItems(userId, queryText, cb) {
   // trim() removes whitespace before and after the query.
   // toLowerCase() makes the query lowercase.
@@ -254,7 +255,7 @@ export function searchForFeedItems(userId, queryText, cb) {
     cb
   );
 }
-
+*/
 
 
 
@@ -327,4 +328,58 @@ function sendXHR(verb, resource, body, cb) {
     default:
       throw new Error('Unknown body type: ' + typeof(body));
   }
+}
+
+/**
+ * Updates the text in a feed item (assumes a status update)
+ */
+export function updateFeedItemText(feedItemId, newContent, cb) {
+  sendXHR('PUT', '/feeditem/' + feedItemId + '/content', newContent, (xhr) => {
+    cb(JSON.parse(xhr.responseText));
+  });
+}
+
+
+/**
+ * Deletes a feed item.
+ */
+export function deleteFeedItem(feedItemId, cb) {
+  sendXHR('DELETE', '/feeditem/' + feedItemId, undefined, () => {
+    cb();
+  });
+}
+
+
+/**
+ * Updates a feed item's likeCounter by adding the user to the likeCounter.
+ * Provides an updated likeCounter in the response.
+ */
+export function likeFeedItem(feedItemId, userId, cb) {
+  sendXHR('PUT', '/feeditem/' + feedItemId + '/likelist/' + userId,
+          undefined, (xhr) => {
+    cb(JSON.parse(xhr.responseText));
+  });
+}
+
+
+/**
+ * Updates a feed item's likeCounter by removing the user
+ * from the likeCounter. Provides an updated likeCounter
+ * in the response.
+ */
+export function unlikeFeedItem(feedItemId, userId, cb) {
+  sendXHR('DELETE', '/feeditem/' + feedItemId + '/likelist/' + userId,
+	      undefined, (xhr) => {
+    cb(JSON.parse(xhr.responseText));
+  });
+}
+
+/**
+ * Searches for feed items with the given text.
+ */
+export function searchForFeedItems(userID, queryText, cb) {
+  // userID is not needed; it's included in the JSON web token.
+  sendXHR('POST', '/search', queryText, (xhr) => {
+    cb(JSON.parse(xhr.responseText));
+  });
 }
