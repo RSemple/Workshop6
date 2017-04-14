@@ -1,34 +1,18 @@
+var database = require('./database.js');
+var readDocument = database.readDocument;
+
 // Imports the express Node module.
 var express = require('express');
 // Creates an Express server.
 var app = express();
 
-
-// Starts the server on port 3000!
-//app.listen(3000, function () {
-//  console.log('Example app listening on port 3000!');
-//});
-
-
-
-//var util = require('./util.js');
-//var reverseString = util.reverseString;
-
 var bodyParser = require('body-parser');
-
-
 app.use(bodyParser.text());
-
 
 
 // You run the server from `server`, so `../client/build` is `server/../client/build`.
 // '..' means "go up one directory", so this translates into `client/build`!
 app.use(express.static('../client/build'));
-
-
-
-var database = require('./database.js');
-var readDocument = database.readDocument;
 
 /**
  * Resolves a feed item. Internal to the server, since it's synchronous.
@@ -48,22 +32,6 @@ function getFeedItemSync(feedItemId) {
   });
   return feedItem;
 }
-
-/**
- * Get the feed data for a particular user.
- */
-function getFeedData(user) {
-  var userData = readDocument('users', user);
-  var feedData = readDocument('feeds', userData.feed);
-  // While map takes a callback, it is synchronous,
-  // not asynchronous. It calls the callback immediately.
-  feedData.contents = feedData.contents.map(getFeedItemSync);
-  // Return FeedData with resolved references.
-  return feedData;
-}
-
-
-
 
 /**
  * Get the user ID from a token. Returns -1 (an invalid ID)
@@ -109,19 +77,67 @@ app.get('/user/:userid/feed', function(req, res) {
   }
 });
 
+/**
+ * Get the feed data for a particular user.
+ */
+function getFeedData(user) {
+  var userData = readDocument('users', user);
+  var feedData = readDocument('feeds', userData.feed);
+  // While map takes a callback, it is synchronous,
+  // not asynchronous. It calls the callback immediately.
+  feedData.contents = feedData.contents.map(getFeedItemSync);
+  // Return FeedData with resolved references.
+  return feedData;
+}
 
 
-var StatusUpdateSchema = require('./schemas/statusupdate.json');
-var validate = require('express-jsonschema').validate;
+
 var writeDocument = database.writeDocument;
 var addDocument = database.addDocument;
-
+var StatusUpdateSchema = require('./schemas/statusupdate.json');
+var validate = require('express-jsonschema').validate;
 
 // Support receiving text in HTTP request bodies
 app.use(bodyParser.text());
 // Support receiving JSON in HTTP request bodies
 app.use(bodyParser.json());
 
+/**
+ * Adds a new status update to the database.
+ */
+function postComment(feedItemId, author, contents) {
+  var feedItem = readDocument('feedItems', feedItemId);
+  feedItem.comments.push({
+    "author": author,
+    "contents": contents,
+    "postDate": new Date().getTime(),
+    "likeCounter": []
+  });
+  writeDocument('feedItems', feedItem);
+  // Return a resolved version of the feed item.
+  return feedItem;
+}
+
+var CommentSchema = require('./schemas/comment.json');
+
+// Post comment
+app.post('/feeditem', validate({ body: CommentSchema }), function(req, res) {
+  // If this function runs, `req.body` passed JSON validation!
+  var body = req.body;
+  var fromUser = getUserIdFromToken(req.get('Authorization'));
+
+  if (fromUser === body.author) {
+    var newUpdate = postComment(body.feedId, body.author, body.contents);
+
+    res.status(201);
+    res.set('Location', '/feeditem/' + newUpdate._id);
+
+    res.send(newUpdate);
+  } else {
+    // 401: Unauthorized.
+    res.status(401).end();
+  }
+});
 
 /**
  * Adds a new status update to the database.
@@ -165,8 +181,7 @@ function postStatusUpdate(user, location, contents) {
 }
 
 // `POST /feeditem { userId: user, location: location, contents: contents  }`
-app.post('/feeditem',
-         validate({ body: StatusUpdateSchema }), function(req, res) {
+app.post('/feeditem', validate({ body: StatusUpdateSchema }), function(req, res) {
   // If this function runs, `req.body` passed JSON validation!
   var body = req.body;
   var fromUser = getUserIdFromToken(req.get('Authorization'));
@@ -187,9 +202,6 @@ app.post('/feeditem',
   }
 });
 
-
-
-
 // Reset database.
 app.post('/resetdb', function(req, res) {
   console.log("Resetting database...");
@@ -198,7 +210,6 @@ app.post('/resetdb', function(req, res) {
   // res.send() sends an empty response with status code 200
   res.send();
 });
-
 
 // Update a feed item.
 app.put('/feeditem/:feeditemid/content', function(req, res) {
@@ -256,6 +267,28 @@ app.delete('/feeditem/:feeditemid', function(req, res) {
   }
 });
 
+// Like a comment
+app.put('/feeditem/:feeditemid/comment/:commentid/likelist/:userid', function(req, res) {
+  var fromUser = getUserIdFromToken(req.get('Authorization'));
+  var feedItemId = parseInt(req.params.feeditemid, 10);
+  var commentId = parseInt(req.params.commentid, 10);
+  var userId = parseInt(req.params.userid, 10);
+
+  if (fromUser === userId) {
+    var feedItem = readDocument('feedItems', feedItemId);
+    // Add to likeCounter if not already present.
+    if (feedItem.comments[commentId].likeCounter.indexOf(userId) === -1) {
+      feedItem.comments[commentId].likeCounter.push(userId);
+      writeDocument('feedItems', feedItem);
+    }
+    // Return a resolved version of the likeCounter
+    feedItem.comments[commentId].author = readDocument('users', feedItem.comments[commentId].author);
+    res.send(feedItem.comments[commentId]);
+  } else {
+    // 401: Unauthorized.
+    res.status(401).end();
+  }
+});
 
 // Like a feed item.
 app.put('/feeditem/:feeditemid/likelist/:userid', function(req, res) {
@@ -271,13 +304,38 @@ app.put('/feeditem/:feeditemid/likelist/:userid', function(req, res) {
       writeDocument('feedItems', feedItem);
     }
     // Return a resolved version of the likeCounter
-    res.send(feedItem.likeCounter.map((userId) => readDocument('users', userId)));
+    res.send(feedItem.likeCounter.map((userId) =>readDocument('users', userId)));
   } else {
     // 401: Unauthorized.
     res.status(401).end();
   }
 });
 
+// Unlike a comment.
+app.delete('/feeditem/:feeditemid/comment/:commentid/likelist/:userid', function(req, res) {
+  var fromUser = getUserIdFromToken(req.get('Authorization'));
+  var feedItemId = parseInt(req.params.feeditemid, 10);
+  var commentId = parseInt(req.params.commentid, 10);
+  var userId = parseInt(req.params.userid, 10);
+
+  if (fromUser === userId) {
+    var feedItem = readDocument('feedItems', feedItemId);
+    var likeIndex = feedItem.comments[commentId].likeCounter.indexOf(userId);
+    // Remove from likeCounter if present
+    if (likeIndex !== -1) {
+      feedItem.comments[commentId].likeCounter.splice(likeIndex, 1);
+      writeDocument('feedItems', feedItem);
+    }
+    // Return a resolved version of the likeCounter
+    // Note that this request succeeds even if the
+	// user already unliked the request!
+    feedItem.comments[commentId].author = readDocument('users', feedItem.comments[commentId].author);
+    res.send(feedItem.comments[commentId]);
+  } else {
+    // 401: Unauthorized.
+    res.status(401).end();
+  }
+});
 
 // Unlike a feed item.
 app.delete('/feeditem/:feeditemid/likelist/:userid', function(req, res) {
@@ -302,7 +360,6 @@ app.delete('/feeditem/:feeditemid/likelist/:userid', function(req, res) {
     res.status(401).end();
   }
 });
-
 
 // Search for feed item
 app.post('/search', function(req, res) {
@@ -333,9 +390,6 @@ app.post('/search', function(req, res) {
   }
 });
 
-
-
-
 /**
  * Translate JSON Schema Validation failures into error 400s.
  */
@@ -349,8 +403,8 @@ app.use(function(err, req, res, next) {
   }
 });
 
-
-//directions say above funtion has to be before app.listen but after everything else so I moved app.listen
+//Directions say to put this under the app.use above, and to put the app.use above under everything else?
+// Starts the server on port 3000!
 app.listen(3000, function () {
   console.log('Example app listening on port 3000!');
 });

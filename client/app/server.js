@@ -115,7 +115,7 @@ export function postStatusUpdate(user, location, contents, cb) {
 
 /**
  * Adds a new comment to the database on the given feed item.
- */
+ *
 export function postComment(feedItemId, author, contents, cb) {
   var feedItem = readDocument('feedItems', feedItemId);
   feedItem.comments.push({
@@ -383,3 +383,33 @@ export function searchForFeedItems(userID, queryText, cb) {
     cb(JSON.parse(xhr.responseText));
   });
 }
+
+
+
+/**
+ * Adds a new status update to the database.
+ */
+ export function postComment(feedItemId, author, contents, cb) {
+   sendXHR('POST', '/feeditem', {
+     feedId: feedItemId,
+     author: author,
+     contents: contents
+   }, (xhr) => {
+     // Return the new status update.
+     cb(JSON.parse(xhr.responseText));
+   });
+ }
+
+ export function likeComment(feedItemId, commentIdx, userId, cb) {
+   sendXHR('PUT', '/feeditem/' + feedItemId + '/comment/' + commentIdx + '/likelist/' + userId,
+           undefined, (xhr) => {
+     cb(JSON.parse(xhr.responseText));
+   });
+ }
+
+ export function unlikeComment(feedItemId, commentIdx, userId, cb) {
+   sendXHR('DELETE', '/feeditem/' + feedItemId + '/comment/' + commentIdx + '/likelist/' + userId,
+           undefined, (xhr) => {
+     cb(JSON.parse(xhr.responseText));
+   });
+ }
